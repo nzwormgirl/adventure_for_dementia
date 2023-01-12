@@ -15,6 +15,7 @@ require(tidyverse)
 require(sf)
 require(XML)
 require(lubridate)
+require(showtext)
 
 
 ```
@@ -85,36 +86,132 @@ pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>%
 month_labels <- pop_repeats %>% 
   filter(cum_dist == max(cum_dist)) %>% glimpse
 
-library(showtext)
+
 
 font_add("xkcd", "data/xkcd.ttf")
 showtext_auto()
 
+caption_text <- "\nAn adventurous running challenge to raise money for Dementia Canterbury\nFollow my journey at www.facebook.com adventurefordementia.nz"
 
-pop_repeats %>% 
-ggplot(aes(cum_dist,elevation)) +
-  geom_line() +
-  geom_text(data = month_labels,aes(y = 250, x = cum_dist + 1,label = Month),hjust = 0,family="xkcd") +
-  facet_grid(Month~.,) +
-  theme_classic() +
-  labs(subtitle = "Elevation in m",
-       x = "Distance in km",
-       y = NULL,
-       title = "Adventure for\nDementia",
-       caption = "\nI'm raising money to support Dementia Canterbury by running the Pipeline of Pain a lot in 2023!\nFollow my journey at www.facebook.com/adventurefordementia.nz") +
-  coord_cartesian(expand = FALSE,clip = "off") +
-  scale_y_continuous(breaks = c(100,200, 300)) +
-  scale_x_continuous(limits = c(0,68)) +
-  theme(strip.background = element_blank(),
-        strip.text.y = element_blank(),
-        plot.subtitle = element_text(hjust = -0.025),
-        plot.title = element_text(hjust = 1,size = 40,vjust = -10),
-        plot.caption = element_text(size = 12),
-        plot.margin = margin(-60,10,5,5),
-        text=element_text(family="xkcd")) 
+base_font <- 15
+
+plot_run <- . %>% 
+  {ggplot(data = ., aes(cum_dist,elevation)) +
+      geom_line() +
+      theme_classic(base_size = base_font) +
+      labs(subtitle = "Elevation in m",
+           x = "Distance in km",
+           y = NULL,
+           title = "Adventure for\nDementia",
+           caption = caption_text) +
+      coord_cartesian(expand = FALSE,clip = "off") +
+      scale_y_continuous(breaks = c(100,200, 300)) +
+      # scale_x_continuous(limits = c(0,68)) +
+      theme(strip.background = element_blank(),
+            strip.text.y = element_blank(),
+            plot.subtitle = element_text(hjust = -0.025),
+            plot.title = element_text(hjust = 1,size = 30,vjust = -40),
+            plot.caption = element_text(size = rel(0.85)),
+            plot.margin = margin(-60,10,5,5),
+            text=element_text(family="xkcd")) }
+
+
+all_months <- pop_repeats %>% 
+  ungroup %>% 
+  plot_run() +
+  geom_text(data = month_labels,
+                aes(y = 250, x = cum_dist + 1 ,label = Month),
+                hjust = 0,
+                family="xkcd",
+                size = base_font * 0.36) +
+      facet_grid(Month~.) +
+  scale_x_continuous(limits = c(0,72))
+
+ggsave(all_months,file = "outputs/elevation_all.png",dpi=72,width = 20, height = 20, units = "cm")  
+  
+
+
+january <- pop_repeats %>% 
+  ungroup %>% 
+  filter(Month %in% "January") %>% 
+plot_run() +
+  geom_text(data = month_labels %>% 
+              filter(Month %in% "January"),
+            aes(y = 250, x = cum_dist - 0.25 ,label = Month),
+            hjust = 1,
+            family="xkcd",
+            size = base_font * 0.36) 
+  
+
+ ggsave(january,file = "outputs/elevation_january.png",dpi=72,width = 20, height = 20, units = "cm")
+ 
 ```
 
 ```{r}
+
+require(terra) # for raster data
+require(tidyterra) # for plotting rasters
+require(ggspatial) # for map annotations
+require(maptiles) # for map backgrounds
+
+Stamen.TerrainBackground = list(
+        src = "Stamen.TerrainBK",
+        q = '"https://stamen-tiles-{s}.a.ssl.fastly.net/terrain-background/{z}/{x}/{y}.png"',
+        sub = c("a", "b", "c", "d"),
+        cit = "Map tiles by CC BY 3.0 \u2014 Map data \u00A9 OpenStreetMap contributors"
+      )
+
+CyclOSM = list(
+        src = "CyclOSM",
+        q = '"https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png"',
+        sub = c("a", "b", "c", "d"),
+        cit = ""
+      )
+
+osm <- list(
+  src = 'OSM',
+  q = '"http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"',
+  sub = c('a','b', 'c'),
+  cit = '© OpenStreetMap contributors.'
+)
+
+tile_z11 <- get_tiles(st_bbox(st_buffer(st_transform(pop_track,3857),350)),
+                       provider = "Stamen.Terrain",
+                      crop = TRUE, zoom = 15)
+
+ggplot() +
+  geom_spatraster_rgb(data = tile_z11) +
+  geom_sf(data = pop_track, 
+          size = 1.5,colour = "black") + #shape = 21,
+  labs(caption = NULL,
+       fill = NULL,
+       shape = NULL) +
+  theme_void() + 
+  theme(legend.position = "right",
+        legend.direction = "vertical",
+        legend.box.margin = margin(-5,0,-10,0),
+        legend.margin = margin(0,0,0,0)) +
+  annotation_scale(style = "ticks",location = "br") 
+
+
+test <- ggplot(data = pop,aes(color = elevation)) +
+  geom_sf() +
+  theme_void()
+
+plot_gg(test,
+  multicore = T,
+  width=5,
+  height=5,
+  scale=150,
+  shadow_intensity = .75,
+  sunangle = 360,
+  offset_edges=T,
+  windowsize=c(1400,866),
+  zoom = .4, 
+  phi = 30, 
+  theta = -30)
+
+render_snapshot("brazil_forest_height_2019.png", clear=T)
 
 ```
 
