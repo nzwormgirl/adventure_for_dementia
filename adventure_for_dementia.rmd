@@ -82,14 +82,15 @@ pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>%
     Month = factor(month.name[month])
   ) %>% 
   # remove some funky elevation points
-  filter(abs(elevation_change) < 6) %>% glimpse
+  filter(abs(elevation_change) < 6) %>% 
+  # add column to indicate it's been run
+  mutate(done = case_when(Month %in% "January" ~ TRUE,
+                          TRUE ~ FALSE)) %>% glimpse
   
 month_labels <- pop_repeats %>% 
   filter(cum_dist == max(cum_dist)) %>% 
   # add column to indicate it's been run
-  mutate(done = case_when(Month %in% "January" ~ TRUE,
-                          TRUE ~ FALSE),
-         emoji = case_when(Month %in% "January" ~ emoji("running"),
+  mutate(emoji = case_when(isTRUE(done)~ emoji("running"),
                           TRUE ~ NA_character_)) %>% 
   ungroup %>% 
   select(Month, cum_dist, done,emoji) %>% glimpse
