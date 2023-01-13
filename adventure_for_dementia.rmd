@@ -17,6 +17,7 @@ require(XML)
 require(lubridate)
 require(showtext)
 require(xkcd)
+require(emojifont)
 
 
 ```
