@@ -154,20 +154,22 @@ ggsave(progress,file = "outputs/elevation_progress.png",dpi=72,width = 20, heigh
 january <- pop_repeats %>% 
   ungroup %>% 
   filter(Month %in% "January") %>% 
-plot_run() +
+  plot_run() +
   geom_text(data = month_labels %>% 
               filter(Month %in% "January"),
             aes(y = 250, x = cum_dist - 0.25 ,label = Month),
             hjust = 1,
             family="xkcd",
-            size = base_font * 0.36) 
+            size = base_font * 0.36,
+            show.legend = FALSE) +
+  scale_colour_manual(values = c("black","black"))
   
 
  ggsave(january,file = "outputs/elevation_january.png",dpi=72,width = 20, height = 20, units = "cm")
  
 ```
 
-```{r}
+```{r , eval = FALSE}
 
 require(terra) # for raster data
 require(tidyterra) # for plotting rasters
