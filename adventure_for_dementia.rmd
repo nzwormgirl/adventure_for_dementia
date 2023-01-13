@@ -16,6 +16,7 @@ require(sf)
 require(XML)
 require(lubridate)
 require(showtext)
+require(xkcd)
 
 
 ```
@@ -80,11 +81,17 @@ pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>%
     Month = factor(month.name[month])
   ) %>% 
   # remove some funky elevation points
-  filter(abs(elevation_change) < 6) %>% 
-  glimpse
+  filter(abs(elevation_change) < 6) %>% glimpse
   
 month_labels <- pop_repeats %>% 
-  filter(cum_dist == max(cum_dist)) %>% glimpse
+  filter(cum_dist == max(cum_dist)) %>% 
+  # add column to indicate it's been run
+  mutate(done = case_when(Month %in% "January" ~ TRUE,
+                          TRUE ~ FALSE),
+         emoji = case_when(Month %in% "January" ~ emoji("running"),
+                          TRUE ~ NA_character_)) %>% 
+  ungroup %>% 
+  select(Month, cum_dist, done,emoji) %>% glimpse
 
 
 
@@ -96,8 +103,8 @@ caption_text <- "\nAn adventurous running challenge to raise money for Dementia 
 base_font <- 15
 
 plot_run <- . %>% 
-  {ggplot(data = ., aes(cum_dist,elevation)) +
-      geom_line() +
+  {ggplot(data = ., aes(cum_dist,elevation,colour = done)) +
+      geom_line(show.legend = FALSE) +
       theme_classic(base_size = base_font) +
       labs(subtitle = "Elevation in m",
            x = "Distance in km",
@@ -120,16 +127,27 @@ all_months <- pop_repeats %>%
   ungroup %>% 
   plot_run() +
   geom_text(data = month_labels,
-                aes(y = 250, x = cum_dist + 1 ,label = Month),
-                hjust = 0,
-                family="xkcd",
-                size = base_font * 0.36) +
+            aes(y = 250, x = cum_dist + 1 ,label = Month),
+            hjust = 0,
+            family="xkcd",
+            size = base_font * 0.36,
+            show.legend = FALSE) +
       facet_grid(Month~.) +
-  scale_x_continuous(limits = c(0,72))
+  scale_x_continuous(limits = c(0,72)) +
+  scale_colour_manual(values = c("black","black"))
 
 ggsave(all_months,file = "outputs/elevation_all.png",dpi=72,width = 20, height = 20, units = "cm")  
   
+progress <- all_months + 
+  scale_colour_manual(values = c("black","red")) +
+  geom_text(data = month_labels,
+            aes(y = 300, x = cum_dist + 11 ,label = emoji),
+            hjust = 0,
+            family="EmojiOne",
+            size = 5,
+            show.legend = FALSE)
 
+ggsave(progress,file = "outputs/elevation_progress.png",dpi=72,width = 20, height = 20, units = "cm")  
 
 january <- pop_repeats %>% 
   ungroup %>% 
@@ -194,24 +212,41 @@ ggplot() +
   annotation_scale(style = "ticks",location = "br") 
 
 
-test <- ggplot(data = pop,aes(color = elevation)) +
-  geom_sf() +
-  theme_void()
 
-plot_gg(test,
-  multicore = T,
-  width=5,
-  height=5,
-  scale=150,
-  shadow_intensity = .75,
-  sunangle = 360,
-  offset_edges=T,
-  windowsize=c(1400,866),
-  zoom = .4, 
-  phi = 30, 
-  theta = -30)
+```
 
-render_snapshot("brazil_forest_height_2019.png", clear=T)
+```{r xkcd stickman}
+xrange <- range(pop_repeats$cum_dist,na.rm= T)
+yrange <- range(pop_repeats$elevation,na.rm=T)
+ratioxy <- diff(xrange) / diff(yrange)
+ 
+mapping <- aes(x=x,
+               y=y,
+               scale=scale,
+               ratioxy=ratioxy,
+               angleofspine = angleofspine,
+               anglerighthumerus = anglerighthumerus,
+               anglelefthumerus = anglelefthumerus,
+               anglerightradius = anglerightradius,
+               angleleftradius = angleleftradius,
+               anglerightleg =  anglerightleg,
+               angleleftleg = angleleftleg,
+               angleofneck = angleofneck)
+ 
+dataman <- data.frame( x= c(5), y=c(100),
+                  scale = c(10),
+                  ratioxy = ratioxy,
+                  angleofspine =  -pi / 2,#seq(- pi / 2, -pi/2 + pi/8, l=3) ,
+                  anglerighthumerus = -pi/6,
+                  anglelefthumerus = pi + pi/6,
+                  anglerightradius = 0,
+                  angleleftradius = runif(1,- pi/4, pi/4),
+                  angleleftleg = 3*pi/2  + pi / 12 ,
+                  anglerightleg = 3*pi/2  - pi / 12,
+                  angleofneck = runif(1, min = 3 * pi / 2 - pi/10 , max = 3 * pi / 2 + pi/10))
+ 
+january + xkcdman(mapping,dataman)
+# }
 
 ```
 
