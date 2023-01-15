@@ -18,8 +18,12 @@ require(lubridate)
 require(showtext)
 require(xkcd)
 require(emojifont)
+require(gganimate)
+require(magick)
 
+animate <- gganimate::animate
 
+# options(gganimate.dev_args = list(fps = 10, start_pause = 5,end_pause = 5, res = 72, height = 20, units = "cm"))
 ```
 
 
@@ -36,41 +40,32 @@ pop_points <- st_read("data/The_Pipeline_of_Pain_Strava.gpx",layer = "track_poin
 # gpx_file <- "data/The_Pipeline_of_Pain_Strava.gpx"
 gpx_file <- "data/pipeline-of-pain.gpx"
 
-# Parse the GPX file
-pfile <- htmlTreeParse(file = gpx_file, error = function(...) {
-}, useInternalNodes = T)
-# Get all elevations, times and coordinates via the respective xpath
-elevations <- as.numeric(xpathSApply(pfile, path = "//trkpt/ele", xmlValue))
-times <- xpathSApply(pfile, path = "//trkpt/time", xmlValue)
-coords <- xpathSApply(pfile, path = "//trkpt", xmlAttrs)
-
-# Extract latitude and longitude from the coordinates
-lats <- as.numeric(coords["lat",])
-lons <- as.numeric(coords["lon",])
-
-pop <- data.frame(lat = lats, lon = lons, elevation = elevations, time = times) %>% 
-  st_as_sf(coords = c("lon","lat"),crs = 4136) %>% glimpse
-  mutate(
-    lead_dist = geometry[row_number() + 1],
-    dist = st_distance(geometry, lead_dist, by_element = T),
-    lead_elevation = elevation[row_number() + 1],
-    elevation_change = lead_elevation - elevation,
-    cum_dist = as.numeric(cumsum(dist))
-  ) %>% 
-  # remove some funky elevation points
-  filter(abs(elevation_change) < 6) %>% 
-  glimpse
-
+read_gpx <- function(gpx_file){
+  # Parse the GPX file
+  pfile <- htmlTreeParse(file = gpx_file, error = function(...) {
+  }, useInternalNodes = T)
+  # Get all elevations, times and coordinates via the respective xpath
+  elevations <- as.numeric(xpathSApply(pfile, path = "//trkpt/ele", xmlValue))
+  times <- xpathSApply(pfile, path = "//trkpt/time", xmlValue)
+  coords <- xpathSApply(pfile, path = "//trkpt", xmlAttrs)
+  
+  # Extract latitude and longitude from the coordinates
+  lats <- as.numeric(coords["lat",])
+  lons <- as.numeric(coords["lon",])
+  
+  data.frame(lat = lats, lon = lons, elevation = elevations, time = times) %>% 
+    st_as_sf(coords = c("lon","lat"),crs = 4136) 
+  
+}
 
 make_monthly_repeats <- function(df, n){
  as.data.frame(lapply(df, rep, n)) %>% 
     mutate(month = n)
 }
 
-
-pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>% 
-  group_by(month) %>% 
-  mutate(
+calculate_distance <- function(df){
+  df %>% 
+    mutate(
     lead_dist = geometry[row_number() + 1],
     dist = st_distance(geometry, lead_dist, by_element = T),
     lead_elevation = elevation[row_number() + 1],
@@ -80,7 +75,14 @@ pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>%
     cum_dist = as.numeric(cumsum(dist))/1000,
     cum_uphill = as.numeric(cumsum(uphill)),
     Month = factor(month.name[month])
-  ) %>% 
+  )
+}
+
+pop <- read_gpx(gpx_file)
+
+pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>% 
+  group_by(month) %>% 
+  calculate_distance() %>% 
   # remove some funky elevation points
   filter(abs(elevation_change) < 6) %>% 
   # add column to indicate it's been run
@@ -151,73 +153,111 @@ progress <- all_months +
 
 ggsave(progress,file = "outputs/elevation_progress.png",dpi=72,width = 20, height = 20, units = "cm")  
 
-january <- pop_repeats %>% 
+# make individual plots for each month
+walk(month.name, function(x){
+  
+  pop_repeats %>% 
   ungroup %>% 
-  filter(Month %in% "January") %>% 
+  filter(Month %in% x) %>% 
   plot_run() +
-  geom_text(data = month_labels %>% 
-              filter(Month %in% "January"),
+  geom_label(data = month_labels %>% 
+              filter(Month %in% x),
             aes(y = 250, x = cum_dist - 0.25 ,label = Month),
             hjust = 1,
             family="xkcd",
             size = base_font * 0.36,
-            show.legend = FALSE) +
+            show.legend = FALSE,label.size = NA) +
   scale_colour_manual(values = c("black","black"))
   
 
- ggsave(january,file = "outputs/elevation_january.png",dpi=72,width = 20, height = 20, units = "cm")
- 
+ ggsave(file = paste0("outputs/elevation_",x,".png"),dpi=72,width = 20, height = 20, units = "cm")
+})
+
 ```
+
+
+```{r animated plots}
+
+afd_january <- read_gpx("data/Adventure_for_Dementia_January.gpx") %>% 
+  mutate(month = 1,
+         done = TRUE,
+         emoji = unique(month_labels$emoji)[1],
+         date_time = parse_date_time(time,tz = "UTC",orders = "%Y-%m-%d%H:%M%S" ) %>% 
+           with_tz("Pacific/Auckland"),
+         diff_time = as.numeric(date_time - min(date_time,na.rm=T))
+         ) %>%
+  calculate_distance %>% 
+  na.omit() %>% glimpse
+
+plot_january <- afd_january %>% 
+  plot_run() +
+  scale_colour_manual(values = c("black","black")) +
+  geom_point(show.legend = FALSE) +
+  theme(plot.title = element_text(colour = "transparent")) +
+  transition_reveal(diff_time) +
+  labs(subtitle = 'Time: {round(frame_along/60,0)} minutes',
+       caption = NULL)
+  
+
+animate_january <- gganimate::animate(plot_january,res=72,width = 20, height = 20, units = "cm",fps=10,start_pause = 5, end_pause = 5)
+
+anim_save(animate_january,filename = "outputs/january_animation.gif")
+
+
+```
+
 
 ```{r , eval = FALSE}
 
 require(terra) # for raster data
 require(tidyterra) # for plotting rasters
-require(ggspatial) # for map annotations
+# require(ggspatial) # for map annotations
 require(maptiles) # for map backgrounds
 
-Stamen.TerrainBackground = list(
-        src = "Stamen.TerrainBK",
-        q = '"https://stamen-tiles-{s}.a.ssl.fastly.net/terrain-background/{z}/{x}/{y}.png"',
-        sub = c("a", "b", "c", "d"),
-        cit = "Map tiles by CC BY 3.0 \u2014 Map data \u00A9 OpenStreetMap contributors"
-      )
-
-CyclOSM = list(
-        src = "CyclOSM",
-        q = '"https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png"',
-        sub = c("a", "b", "c", "d"),
-        cit = ""
-      )
-
-osm <- list(
-  src = 'OSM',
-  q = '"http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"',
-  sub = c('a','b', 'c'),
-  cit = '© OpenStreetMap contributors.'
-)
-
 tile_z11 <- get_tiles(st_bbox(st_buffer(st_transform(pop_track,3857),350)),
-                       provider = "Stamen.Terrain",
+                       provider = "Esri.WorldTopoMap",#OpenTopoMap",#Stamen.Terrain",
                       crop = TRUE, zoom = 15)
 
-ggplot() +
+january_map <- afd_january %>% 
+  bind_cols(st_coordinates(afd_january)) %>% 
+
+ggplot(aes(X,Y)) +
   geom_spatraster_rgb(data = tile_z11) +
-  geom_sf(data = pop_track, 
-          size = 1.5,colour = "black") + #shape = 21,
+  geom_line(size = 1, colour = "black") +
   labs(caption = NULL,
        fill = NULL,
        shape = NULL) +
   theme_void() + 
-  theme(legend.position = "right",
-        legend.direction = "vertical",
-        legend.box.margin = margin(-5,0,-10,0),
-        legend.margin = margin(0,0,0,0)) +
-  annotation_scale(style = "ticks",location = "br") 
+  theme(text=element_text(family="xkcd")) +
+  transition_reveal(diff_time) +
+  labs(subtitle = 'Time: {round(frame_along/60,0)} minutes')
 
+animate_january_map <- gganimate::animate(january_map,fps = 10,start_pause = 5, end_pause = 5,
+                                          height = 20, units = "cm",res=72)
 
-
+anim_save(animate_january_map,filename = "outputs/january_map_animation.gif")
 ```
+
+https://towardsdatascience.com/how-to-combine-animated-plots-in-r-734c6c952315
+
+```{r join animations together}
+
+library(magick)
+a_mgif <- image_read("outputs/january_map_animation.gif")
+b_mgif <- image_read("outputs/january_animation.gif")
+
+image_info(a_mgif)
+
+new_gif <- image_append(c(a_mgif[1], b_mgif[1]), stack = FALSE)
+for(i in 2:100){
+  combined <- image_append(c(a_mgif[i], b_mgif[i]), stack = FALSE)
+  new_gif <- c(new_gif, combined)
+}
+
+
+image_write(new_gif, "january_combined_animation.gif")
+```
+
 
 ```{r xkcd stickman}
 xrange <- range(pop_repeats$cum_dist,na.rm= T)
