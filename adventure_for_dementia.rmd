@@ -25,22 +25,19 @@ require(paletteer)
 
 animate <- gganimate::animate
 
+this_month <- "May"
+
 # options(gganimate.dev_args = list(fps = 10, start_pause = 5,end_pause = 5, res = 72, height = 20, units = "cm"))
 ```
 
+```{r functions and constants}
 
-```{r load data}
-pop_track <- st_read("data/pipeline-of-pain.gpx",layer = "tracks")
+font_add("xkcd", "data/xkcd.ttf")
+showtext_auto()
 
-pop_points <- st_read("data/pipeline-of-pain.gpx",layer = "track_points")
+caption_text <- "\nAn adventurous running challenge to raise money for Dementia Canterbury\nFollow my journey at www.facebook.com adventurefordementia.nz"
 
-pop_track <- st_read("data/The_Pipeline_of_Pain_Strava.gpx",layer = "tracks")
-
-pop_points <- st_read("data/The_Pipeline_of_Pain_Strava.gpx",layer = "track_points")
-
-
-# gpx_file <- "data/The_Pipeline_of_Pain_Strava.gpx"
-gpx_file <- "data/pipeline-of-pain.gpx"
+base_font <- 15
 
 read_gpx <- function(gpx_file){
   # Parse the GPX file
@@ -80,34 +77,6 @@ calculate_distance <- function(df){
   )
 }
 
-pop <- read_gpx(gpx_file)
-
-pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>% 
-  group_by(month) %>% 
-  calculate_distance() %>% 
-  # remove some funky elevation points
-  filter(abs(elevation_change) < 6) %>% 
-  # add column to indicate it's been run
-  mutate(done = case_when(Month %in% c("January","February","March") ~ TRUE,
-                          TRUE ~ FALSE)) %>% glimpse
-  
-month_labels <- pop_repeats %>% 
-  filter(cum_dist == max(cum_dist)) %>% 
-  # add column to indicate it's been run
-  mutate(emoji = case_when(isTRUE(done)~ emoji("running"),
-                          TRUE ~ NA_character_)) %>% 
-  ungroup %>% 
-  select(Month, cum_dist, done,emoji) %>% glimpse
-
-
-
-font_add("xkcd", "data/xkcd.ttf")
-showtext_auto()
-
-caption_text <- "\nAn adventurous running challenge to raise money for Dementia Canterbury\nFollow my journey at www.facebook.com adventurefordementia.nz"
-
-base_font <- 15
-
 plot_run <- . %>% 
   {ggplot(data = ., aes(cum_dist,elevation,colour = done)) +
       geom_line(show.legend = FALSE) +
@@ -126,9 +95,50 @@ plot_run <- . %>%
             plot.title = element_text(hjust = 1,size = 30,vjust = -40),
             plot.caption = element_text(size = rel(0.85)),
             plot.margin = margin(-60,10,5,5),
-            text=element_text(family="xkcd")) }
+            text=element_text(family="xkcd"),
+            axis.text = element_text(color = "black",size = rel(0.85))) }
+
+```
 
 
+```{r load data}
+pop_track <- st_read("data/pipeline-of-pain.gpx",layer = "tracks")
+
+pop_points <- st_read("data/pipeline-of-pain.gpx",layer = "track_points")
+
+pop_track <- st_read("data/The_Pipeline_of_Pain_Strava.gpx",layer = "tracks")
+
+pop_points <- st_read("data/The_Pipeline_of_Pain_Strava.gpx",layer = "track_points")
+
+
+# gpx_file <- "data/The_Pipeline_of_Pain_Strava.gpx"
+gpx_file <- "data/pipeline-of-pain.gpx"
+
+
+pop <- read_gpx(gpx_file)
+
+pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>% 
+  group_by(month) %>% 
+  calculate_distance() %>% 
+  # remove some funky elevation points
+  filter(abs(elevation_change) < 6) %>% 
+  # add column to indicate it's been run
+  mutate(done = case_when(Month %in% c("January","February","March","April","May") ~ TRUE,
+                          TRUE ~ FALSE)) %>% glimpse
+  
+month_labels <- pop_repeats %>% 
+  filter(cum_dist == max(cum_dist)) %>% 
+  # add column to indicate it's been run
+  mutate(emoji = case_when(isTRUE(done)~ emoji("running"),
+                          TRUE ~ NA_character_)) %>% 
+  ungroup %>% 
+  select(Month, cum_dist, done,emoji) %>% glimpse
+
+
+
+```
+
+```{r make plots}
 all_months <- pop_repeats %>% 
   ungroup %>% 
   plot_run() +
@@ -188,6 +198,39 @@ walk(month.name, function(x){
  ggsave(file = paste0("outputs/elevation_",x,".png"),dpi=72,width = 20, height = 20, units = "cm")
 })
 
+
+event_plot <- pop_repeats %>% 
+  ungroup %>% 
+  filter(Month %in% this_month) %>% 
+  plot_run() +
+  # geom_text(data = month_labels %>% 
+  #             filter(Month %in% this_month),
+  #           aes(y = 225, x = cum_dist/2 ,label = Month),
+  #           # hjust = 1,
+  #           family="xkcd",
+  #           size = base_font*2,
+  #           show.legend = FALSE) +
+  scale_colour_manual(values = c("black","black")) +
+  labs(caption = NULL) +
+  theme(plot.title = element_text(hjust = 1,size = 30,vjust = -50),
+        plot.subtitle = element_text(hjust = -0.025,vjust = -0.5),
+        plot.background = element_rect(fill = "transparent", colour = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        axis.text = element_text(color = "black",size = rel(0.85))) 
+  
+
+ ggsave(event_plot,
+        file = paste0("outputs/",this_month,"/elevation_wide.svg"),width = 30, height = 15, units = "cm")
+ ggsave(event_plot,
+        file = paste0("outputs/",this_month,"/elevation_square.svg"),width = 15, height = 15, units = "cm")
+ 
+ ggsave(event_plot + 
+          theme(plot.title = element_text(hjust = 1,size = 30,vjust = -50,colour = "transparent")), 
+        file = paste0("outputs/",this_month,"/elevation_race_number.svg"),width = 17, height = 17*0.7, units = "cm")
+ 
+ragg::agg_png("outputs/",this_month,"/elevation_wide.png", width = 30, height = 15, units = "cm", res = 150, scaling = 3,background="transparent")
+event_plot
+dev.off() 
 ```
 
 
