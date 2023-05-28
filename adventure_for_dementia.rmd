@@ -396,3 +396,23 @@ january + xkcdman(mapping,dataman)
 
 ```
 
+```{r rayshader animated map, eval = FALSE}
+# devtools::install_github("zappingseb/rayshaderanimate")
+## This code currently doesn't work
+require(rayshaderanimate)
+
+test <- get_table_from_gpx(gpx_file) %>% 
+  get_enriched_gpx_table()
+
+test_bbox <- get_bbox_from_gpx_table(test)
+el_mat <- get_elevdata_from_bbox(test_bbox)
+elmat_rayshade <- el_mat %>% unlabel_elevdata()
+el_mat_long <- get_elevdata_long(el_mat)
+
+# data(el_mat) # load pre-stored data
+# elmat_rayshade <- el_mat %>% unlabel_elevdata()
+# elmat_long <- get_elevdata_long(el_mat)
+
+plot_2d_elevdata(elevdata_rayshade = elmat_rayshade)
+```
+
