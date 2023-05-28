@@ -25,7 +25,7 @@ require(paletteer)
 
 animate <- gganimate::animate
 
-this_month <- "May"
+this_month <- "June"
 
 # options(gganimate.dev_args = list(fps = 10, start_pause = 5,end_pause = 5, res = 72, height = 20, units = "cm"))
 ```
@@ -64,16 +64,17 @@ make_monthly_repeats <- function(df, n){
 
 calculate_distance <- function(df){
   df %>% 
-    mutate(
-    lead_dist = geometry[row_number() + 1],
-    dist = st_distance(geometry, lead_dist, by_element = T),
-    lead_elevation = elevation[row_number() + 1],
-    elevation_change = lead_elevation - elevation,
-    uphill = case_when(elevation_change < 0 ~ 0,
-                       TRUE ~ elevation_change),
-    cum_dist = as.numeric(cumsum(dist))/1000,
-    cum_uphill = as.numeric(cumsum(uphill)),
-    Month = factor(month.name[month])
+    mutate(lead_dist = geometry[row_number() + 1],
+           dist = st_distance(geometry, lead_dist, by_element = T),
+           lead_elevation = elevation[row_number() + 1],
+           elevation_change = lead_elevation - elevation,
+           cum_dist = as.numeric(cumsum(dist))/1000) %>% 
+    # remove some funky elevation points
+    filter(abs(elevation_change) < 6) %>% 
+    mutate(uphill = case_when(elevation_change < 0 ~ 0,
+                              TRUE ~ elevation_change),
+           cum_uphill = as.numeric(cumsum(uphill)),
+           Month = factor(month.name[month])
   )
 }
 
@@ -120,10 +121,11 @@ pop <- read_gpx(gpx_file)
 pop_repeats <- map_dfr(1:12,function(x) make_monthly_repeats(pop,x)) %>% 
   group_by(month) %>% 
   calculate_distance() %>% 
-  # remove some funky elevation points
-  filter(abs(elevation_change) < 6) %>% 
+  # # remove some funky elevation points
+  # filter(abs(elevation_change) < 6) %>% 
   # add column to indicate it's been run
-  mutate(done = case_when(Month %in% c("January","February","March","April","May") ~ TRUE,
+  mutate(done = case_when(Month %in% 
+                            month.name[c(1:which(this_month == month.name))] ~ TRUE,
                           TRUE ~ FALSE)) %>% glimpse
   
 month_labels <- pop_repeats %>% 
@@ -154,11 +156,11 @@ all_months <- pop_repeats %>%
 
 ggsave(all_months,file = "outputs/elevation_all.png",dpi=72,width = 20, height = 20, units = "cm")  
 
-all_months +
-  labs(caption = NULL) +
-  theme(plot.background = element_rect(fill = "transparent"),
-        panel.background = element_rect(fill = "transparent"),
-        plot.title = element_text(hjust = 1,size = 30,vjust = -40, colour = "transparent"))
+# all_months +
+#   labs(caption = NULL) +
+#   theme(plot.background = element_rect(fill = "transparent"),
+#         panel.background = element_rect(fill = "transparent"),
+#         plot.title = element_text(hjust = 1,size = 30,vjust = -40, colour = "transparent"))
 
 ggsave(all_months +
   labs(caption = NULL) +
@@ -176,7 +178,8 @@ progress <- all_months +
             size = 5,
             show.legend = FALSE)
 
-ggsave(progress,file = "outputs/elevation_progress.png",dpi=72,width = 20, height = 20, units = "cm")  
+ggsave(progress,file = paste0("outputs/",this_month,"/elevation_progress.png"),
+       dpi=72,width = 20, height = 20, units = "cm")  
 
 # make individual plots for each month
 walk(month.name, function(x){
@@ -195,7 +198,7 @@ walk(month.name, function(x){
   scale_colour_manual(values = c("black","black"))
   
 
- ggsave(file = paste0("outputs/elevation_",x,".png"),dpi=72,width = 20, height = 20, units = "cm")
+ ggsave(file = paste0("outputs/",x,"/elevation.png"),dpi=72,width = 20, height = 20, units = "cm")
 })
 
 
@@ -228,9 +231,9 @@ event_plot <- pop_repeats %>%
           theme(plot.title = element_text(hjust = 1,size = 30,vjust = -50,colour = "transparent")), 
         file = paste0("outputs/",this_month,"/elevation_race_number.svg"),width = 17, height = 17*0.7, units = "cm")
  
-ragg::agg_png("outputs/",this_month,"/elevation_wide.png", width = 30, height = 15, units = "cm", res = 150, scaling = 3,background="transparent")
-event_plot
-dev.off() 
+# ragg::agg_png("outputs/",this_month,"/elevation_wide.png", width = 30, height = 15, units = "cm", res = 150, scaling = 3,background="transparent")
+# event_plot
+# dev.off() 
 ```
 
 
@@ -253,6 +256,7 @@ monthly_efforts <- map_df(monthly_effort_files,
                         function(x) read_gpx(x) %>% 
                           mutate(Month = factor(gsub("data/monthly_efforts/Adventure_for_Dementia_|\\.gpx","",x),
                                  levels = month.name))) %>% 
+filter(Month %in% month.name[1:which(this_month == month.name)]) %>% 
   group_by(Month) %>% 
   calculate_elapsed_time() %>% 
   calculate_distance %>% 
@@ -342,7 +346,7 @@ anim_save(animate_january_map,filename = "outputs/january_map_animation.gif")
 
 https://towardsdatascience.com/how-to-combine-animated-plots-in-r-734c6c952315
 
-```{r join animations together}
+```{r join animations together, eval = FALSE}
 
 library(magick)
 a_mgif <- image_read("outputs/january_map_animation.gif")
@@ -361,7 +365,7 @@ image_write(new_gif, "outputs/january_combined_animation.gif")
 ```
 
 
-```{r xkcd stickman}
+```{r xkcd stickman, eval = FALSE}
 xrange <- range(pop_repeats$cum_dist,na.rm= T)
 yrange <- range(pop_repeats$elevation,na.rm=T)
 ratioxy <- diff(xrange) / diff(yrange)
