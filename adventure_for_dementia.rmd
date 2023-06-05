@@ -302,6 +302,45 @@ anim_save(animated_plot_mp4,filename = paste0("outputs/",this_month,"/animated_p
 
 ```
 
+```{r calculate sunrise-sunset}
+
+require(suncalc)
+
+time_format <- function(hrmn) substr(sprintf("%04d", hrmn),1,2)
+
+# get first Saturday of month
+x <- seq(as.Date("2023-01-01"), as.Date("2023-12-31"), by = "day")
+# You need to adapt "Monday" to the equivalent in your locale
+rundays <- x[weekdays(x) == "Saturday" & as.numeric(format(x, "%d")) <= 7]
+names(rundays) <- month.name
+
+daylight_hours <- getSunlightTimes(x,lat = -43.5, lon = 172.6, tz = "Pacific/Auckland",
+                 keep = c("dawn","sunrise","sunset","dusk")) %>% 
+  mutate(month = month(date),
+         daylight = dusk - dawn,
+         sunlight = sunset - sunrise,
+         expected_time_1.25 = month * 1.250,
+         expected_time_1.50 = month * 1.50,
+         across(c("dawn","sunrise","sunset","dusk"),~as.numeric(format(.,"%H%M")))) %>% glimpse
+
+ggplot(data = daylight_hours,
+       aes(x= date)) +
+  geom_ribbon(aes(ymin = sunrise,ymax = sunset), fill="#ffeda0") + 
+  geom_ribbon(aes(ymin = dawn,ymax = dusk),alpha = 0.25, fill="#ffeda0") + 
+  geom_linerange(data = daylight_hours %>% 
+                   filter(date %in% rundays | date %in% as.Date("2023-04-02")), 
+                 aes(ymin = sunrise, ymax = sunrise + expected_time_1.25*100 ),
+                 colour = "red",lwd = 4) +
+  geom_linerange(data = daylight_hours %>% 
+                   filter(date %in% rundays | date %in% as.Date("2023-04-02")), 
+                 aes(ymin = sunrise, ymax = sunrise + expected_time_1.50*100 ),
+                 colour = "red",lwd = 4,alpha = 0.5) +
+  scale_x_date(expand=c(0,0),date_breaks = "month",date_labels = "%b") +
+  scale_y_continuous(labels=time_format, limits=c(0,2400), 
+                     breaks=seq(0, 2400, 200), expand=c(0,0)) + theme(panel.background=element_rect(fill="#525252"),                                                                      panel.grid=element_blank()) +
+  labs (x = NULL)
+```
+
 
 ```{r , eval = FALSE}
 
