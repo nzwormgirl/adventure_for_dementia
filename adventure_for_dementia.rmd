@@ -22,10 +22,11 @@ require(gganimate)
 require(magick)
 require(av)
 require(paletteer)
+require(patchwork)
 
 animate <- gganimate::animate
 
-this_month <- "June"
+this_month <- "July"
 
 # options(gganimate.dev_args = list(fps = 10, start_pause = 5,end_pause = 5, res = 72, height = 20, units = "cm"))
 ```
@@ -314,31 +315,73 @@ x <- seq(as.Date("2023-01-01"), as.Date("2023-12-31"), by = "day")
 rundays <- x[weekdays(x) == "Saturday" & as.numeric(format(x, "%d")) <= 7]
 names(rundays) <- month.name
 
+actual_run_times <- monthly_efforts %>% 
+  group_by(Month,month) %>% 
+  summarise(start = min(date_time),
+            end = max(date_time),
+            duration = end - start,
+            done = TRUE)
+
 daylight_hours <- getSunlightTimes(x,lat = -43.5, lon = 172.6, tz = "Pacific/Auckland",
                  keep = c("dawn","sunrise","sunset","dusk")) %>% 
   mutate(month = month(date),
          daylight = dusk - dawn,
          sunlight = sunset - sunrise,
-         expected_time_1.25 = month * 1.250,
-         expected_time_1.50 = month * 1.50,
-         across(c("dawn","sunrise","sunset","dusk"),~as.numeric(format(.,"%H%M")))) %>% glimpse
+         across(c("dawn","sunrise","sunset","dusk"),~as.numeric(format(.,"%H%M")))) %>% 
+  left_join(actual_run_times) %>% 
+  mutate(expected_time_1.25 = case_when(is.na(duration) ~ month * 1.250,
+                                        TRUE ~ as.numeric(duration)),
+         expected_time_1.50 = case_when(is.na(duration) ~ month * 1.5,
+                                        TRUE ~ as.numeric(duration)),
+         start = case_when(is.na(start) ~ sunrise,
+                           TRUE ~ as.numeric(format(start,"%H%M"))),
+         done = case_when(is.na(done) ~ FALSE,
+                          TRUE ~ TRUE)) %>% glimpse
 
-ggplot(data = daylight_hours,
+plot_daylight_hours <- ggplot(data = daylight_hours,
        aes(x= date)) +
   geom_ribbon(aes(ymin = sunrise,ymax = sunset), fill="#ffeda0") + 
   geom_ribbon(aes(ymin = dawn,ymax = dusk),alpha = 0.25, fill="#ffeda0") + 
   geom_linerange(data = daylight_hours %>% 
                    filter(date %in% rundays | date %in% as.Date("2023-04-02")), 
-                 aes(ymin = sunrise, ymax = sunrise + expected_time_1.25*100 ),
-                 colour = "red",lwd = 4) +
+                 aes(ymin = start, ymax = start + expected_time_1.25*100,colour = done ),
+                 lwd = 4,show.legend = FALSE) +
   geom_linerange(data = daylight_hours %>% 
                    filter(date %in% rundays | date %in% as.Date("2023-04-02")), 
-                 aes(ymin = sunrise, ymax = sunrise + expected_time_1.50*100 ),
-                 colour = "red",lwd = 4,alpha = 0.5) +
+                 aes(ymin = start, ymax = start + expected_time_1.50*100,colour = done ),
+                 lwd = 4,alpha = 0.5,show.legend = FALSE) +
   scale_x_date(expand=c(0,0),date_breaks = "month",date_labels = "%b") +
   scale_y_continuous(labels=time_format, limits=c(0,2400), 
-                     breaks=seq(0, 2400, 200), expand=c(0,0)) + theme(panel.background=element_rect(fill="#525252"),                                                                      panel.grid=element_blank()) +
-  labs (x = NULL)
+                     breaks=seq(0, 2400, 200), expand=c(0,0)) + 
+  theme(panel.background=element_rect(fill="#525252"),                                                                      
+        panel.grid=element_blank()) +
+  labs (x = NULL,
+        colour = NULL,
+        y = "Time of day")
+
+
+plot_daylength <- ggplot(data = daylight_hours,
+       aes(x= date)) +
+  geom_ribbon(aes(ymin = 0,ymax = sunlight), fill="#ffeda0") + 
+  geom_ribbon(aes(ymin = 0,ymax = daylight),alpha = 0.25, fill="#ffeda0") + 
+  geom_linerange(data = daylight_hours %>%
+                   filter(date %in% rundays | date %in% as.Date("2023-04-02")),
+                 aes(ymin = 0, ymax = expected_time_1.25,colour = done ),
+                 lwd = 4,show.legend = FALSE) +
+  geom_linerange(data = daylight_hours %>%
+                   filter(date %in% rundays | date %in% as.Date("2023-04-02")),
+                 aes(ymin = 0, ymax = expected_time_1.50,colour = done),
+                 lwd = 4,alpha = 0.5,show.legend = FALSE) +
+  scale_x_date(expand=c(0,0),date_breaks = "month",date_labels = "%b") +
+  scale_y_continuous(limits=c(0,24), 
+                     breaks=seq(0, 24, 2), expand=c(0,0)) + 
+  theme(panel.background=element_rect(fill="#525252"),
+        panel.grid=element_blank()) +
+  labs (x = NULL,
+        y = "Daylight hours")
+
+plot_daylight_hours / plot_daylength
+
 ```
 
 
