@@ -307,7 +307,10 @@ anim_save(animated_plot_mp4,filename = paste0("outputs/",this_month,"/animated_p
 
 require(suncalc)
 
+convert_time <- function(time) as.numeric(format(time,"%H%M"))
+
 time_format <- function(hrmn) substr(sprintf("%04d", hrmn),1,2)
+
 
 # get first Saturday of month
 x <- seq(as.Date("2023-01-01"), as.Date("2023-12-31"), by = "day")
@@ -320,68 +323,140 @@ actual_run_times <- monthly_efforts %>%
   summarise(start = min(date_time),
             end = max(date_time),
             duration = end - start,
-            done = TRUE)
+            done = TRUE) %>% 
+  mutate(mean_lap_time = duration / month)
 
 daylight_hours <- getSunlightTimes(x,lat = -43.5, lon = 172.6, tz = "Pacific/Auckland",
                  keep = c("dawn","sunrise","sunset","dusk")) %>% 
   mutate(month = month(date),
          daylight = dusk - dawn,
-         sunlight = sunset - sunrise,
-         across(c("dawn","sunrise","sunset","dusk"),~as.numeric(format(.,"%H%M")))) %>% 
+         sunlight = sunset - sunrise) %>% #,
+         # across(c("dawn","sunrise","sunset","dusk"),~format(.,"%H%M"))) %>% glimpse
   left_join(actual_run_times) %>% 
-  mutate(expected_time_1.25 = case_when(is.na(duration) ~ month * 1.250,
-                                        TRUE ~ as.numeric(duration)),
-         expected_time_1.50 = case_when(is.na(duration) ~ month * 1.5,
-                                        TRUE ~ as.numeric(duration)),
-         start = case_when(is.na(start) ~ sunrise,
-                           TRUE ~ as.numeric(format(start,"%H%M"))),
+  mutate(expected_time_1.25 = case_when(is.na(duration) ~ 
+                                          as.duration(month * max(mean_lap_time,na.rm = T)),
+                                        TRUE ~ duration),
+         expected_time_1.50 = case_when(is.na(duration) ~ as.duration(month*3600 * 1.5),
+                                        TRUE ~ duration),
+         start_dawn = case_when(is.na(start) ~ dawn,
+                           TRUE ~ start),
+         start_sunrise = case_when(is.na(start) ~ sunrise,
+                           TRUE ~ start),
          done = case_when(is.na(done) ~ FALSE,
-                          TRUE ~ TRUE)) %>% glimpse
+                          TRUE ~ TRUE)) %>% 
+  pivot_longer(names_to = "lap_time",
+               values_to = "expected_time",
+               cols= contains("expected_time")) %>% 
+  mutate(lap_time = factor(case_when(done ~ "actual",
+                                     lap_time %in% "expected_time_1.25" ~ "mean",
+                                     TRUE ~ "max"),
+                           levels = c("actual","mean","max"))) %>% 
+  glimpse
+
+daylight_pal <- c(daylight = "#F7E690FF",
+                  night = "#172869FF",
+                  actual = "#088BBEFF",
+                  estimate = "#1BB6AFFF")
+
+
+daylight_labels <- data.frame(class = c("actual", "mean", "max"),
+                              values = c(alpha(daylight_pal[[3]], 1),
+                                         alpha(daylight_pal[[4]], 1),
+                                         alpha(daylight_pal[[4]], 0.5)),
+                              labels = c("Actual run time",
+                                         paste0("Mean lap pace = ",
+                                                round(max(actual_run_times$mean_lap_time),1) ," hours"),
+                                         "Max lap pace = 1.5 hours"))
+
+
+
+
 
 plot_daylight_hours <- ggplot(data = daylight_hours,
        aes(x= date)) +
-  geom_ribbon(aes(ymin = sunrise,ymax = sunset), fill="#ffeda0") + 
-  geom_ribbon(aes(ymin = dawn,ymax = dusk),alpha = 0.25, fill="#ffeda0") + 
+   geom_point(data = data.frame(date = daylight_hours$date,time = runif(length(daylight_hours$date))*2400),
+             aes(date,time),colour = "white",shape = ".") +
+  geom_ribbon(aes(ymin = convert_time(sunrise),
+                  ymax = convert_time(sunset)), 
+              fill=daylight_pal[1]) + 
+  geom_ribbon(aes(ymin = convert_time(dawn),
+                  ymax = convert_time(dusk)),
+              alpha = 0.5, fill=daylight_pal[1]) +
+
   geom_linerange(data = daylight_hours %>% 
                    filter(date %in% rundays | date %in% as.Date("2023-04-02")), 
-                 aes(ymin = start, ymax = start + expected_time_1.25*100,colour = done ),
-                 lwd = 4,show.legend = FALSE) +
-  geom_linerange(data = daylight_hours %>% 
-                   filter(date %in% rundays | date %in% as.Date("2023-04-02")), 
-                 aes(ymin = start, ymax = start + expected_time_1.50*100,colour = done ),
-                 lwd = 4,alpha = 0.5,show.legend = FALSE) +
+                 aes(ymin = convert_time(start_dawn), 
+                     ymax = convert_time(start_dawn + expected_time),
+                     colour = lap_time),
+                 lwd = 4,show.legend = TRUE) +
   scale_x_date(expand=c(0,0),date_breaks = "month",date_labels = "%b") +
-  scale_y_continuous(labels=time_format, limits=c(0,2400), 
-                     breaks=seq(0, 2400, 200), expand=c(0,0)) + 
-  theme(panel.background=element_rect(fill="#525252"),                                                                      
-        panel.grid=element_blank()) +
+  scale_y_continuous( limits=c(0,2400),labels = time_format, 
+                     breaks=seq(0, 2400, 300), expand=c(0,0)) + 
+  theme(panel.background=element_rect(fill=daylight_pal[2]),
+        panel.grid=element_blank(),
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key=element_rect(fill="white")) +
   labs (x = NULL,
+        y = NULL,
         colour = NULL,
-        y = "Time of day")
+        subtitle = "Time of day") +
+  scale_colour_manual(name = "Time to complete",
+                      values = daylight_labels$values,
+                      labels = daylight_labels$labels)
 
 
 plot_daylength <- ggplot(data = daylight_hours,
        aes(x= date)) +
-  geom_ribbon(aes(ymin = 0,ymax = sunlight), fill="#ffeda0") + 
-  geom_ribbon(aes(ymin = 0,ymax = daylight),alpha = 0.25, fill="#ffeda0") + 
+  geom_point(data = data.frame(date = daylight_hours$date,time = runif(length(daylight_hours$date))*24),
+             aes(date,time),colour = "white",shape = ".") +
+  geom_ribbon(aes(ymin = 0,ymax = sunlight), fill=daylight_pal[1]) + 
+  geom_ribbon(aes(ymin = 0,ymax = daylight),alpha = 0.5, fill=daylight_pal[1]) +
   geom_linerange(data = daylight_hours %>%
                    filter(date %in% rundays | date %in% as.Date("2023-04-02")),
-                 aes(ymin = 0, ymax = expected_time_1.25,colour = done ),
-                 lwd = 4,show.legend = FALSE) +
-  geom_linerange(data = daylight_hours %>%
-                   filter(date %in% rundays | date %in% as.Date("2023-04-02")),
-                 aes(ymin = 0, ymax = expected_time_1.50,colour = done),
-                 lwd = 4,alpha = 0.5,show.legend = FALSE) +
+                 aes(ymin = 0, ymax = as.numeric(expected_time)/3600,
+                     colour = lap_time),
+                 lwd = 4) +
   scale_x_date(expand=c(0,0),date_breaks = "month",date_labels = "%b") +
   scale_y_continuous(limits=c(0,24), 
-                     breaks=seq(0, 24, 2), expand=c(0,0)) + 
-  theme(panel.background=element_rect(fill="#525252"),
-        panel.grid=element_blank()) +
+                     breaks=seq(0, 24, 3), expand=c(0,0)) +
+  theme(panel.background=element_rect(fill=daylight_pal[2]),
+        panel.grid=element_blank(),
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key=element_rect(fill="white")) +
   labs (x = NULL,
-        y = "Daylight hours")
+        y = NULL,
+        subtitle  = "Number of daylight hours",
+        colour = "Expected lap time") +
+  scale_colour_manual(name = "Time to complete",
+                      values = daylight_labels$values,
+                      labels = daylight_labels$labels)
 
-plot_daylight_hours / plot_daylength
+(plot_daylight_hours +
+  theme(axis.text.x = element_blank())) / plot_daylength +
+  plot_annotation(caption = "The time taken to complete each month's Adventure for Dementia plotted against the available daylight hours.\nGreen bars show estimated times based on current pacing.",
+                  # subtitle = "Will I be running in the dark?",
+                  title = "Adventure\nfor Dementia") +
+  plot_layout(guides = 'collect') &
+  theme(panel.background=element_rect(fill=daylight_pal[2]),
+        panel.grid=element_blank(),
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key=element_rect(fill="white"),
+        legend.spacing.x = unit(0.15, 'cm'),
+        text=element_text(family="xkcd",size = 30),
+        axis.text= element_text(color = "black"),
+        plot.caption = element_text(lineheight = 0.25),
+        plot.title = element_text(hjust = 1,size = 50,vjust = -20,lineheight = 0.25),
+        plot.subtitle = element_text(hjust = 0,lineheight = 0.25),
+        plot.margin = margin(-10,10,5,5))
 
+ggsave(filename = "outputs/running_in_the_dark.png",width = 15, height = 15,units="cm")
+
+daylight_hours %>% 
+  filter(date %in% as.Date("2023-07-01")) %>% 
+  mutate()
 ```
 
 
