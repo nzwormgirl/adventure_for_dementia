@@ -100,6 +100,17 @@ plot_run <- . %>%
             text=element_text(family="xkcd"),
             axis.text = element_text(color = "black",size = rel(0.85))) }
 
+calculate_elapsed_time <- function(df){
+  df %>% 
+    mutate(date_time = parse_date_time(time,tz = "UTC",orders = "%Y-%m-%d%H:%M%S" ) %>% 
+             with_tz("Pacific/Auckland"),
+           elapsed_time = as.numeric(date_time - min(date_time,na.rm=T)),
+           hours = hour(seconds_to_period(elapsed_time)),
+           minutes = minute(seconds_to_period(elapsed_time)),
+           hours_minutes = hm(paste(hours,minutes, sep=":")),
+           month = month(date_time))
+}
+
 ```
 
 
@@ -137,6 +148,20 @@ month_labels <- pop_repeats %>%
   ungroup %>% 
   select(Month, cum_dist, done,emoji) %>% glimpse
 
+
+
+monthly_effort_files <- dir("data/monthly_efforts/",pattern = "gpx$",full.names = T)
+
+monthly_efforts <- map_df(monthly_effort_files,
+                        function(x) read_gpx(x) %>% 
+                          mutate(Month = factor(gsub("data/monthly_efforts/Adventure_for_Dementia_|\\.gpx","",x),
+                                 levels = month.name))) %>% 
+filter(Month %in% month.name[1:which(this_month == month.name)]) %>% 
+  group_by(Month) %>% 
+  calculate_elapsed_time() %>% 
+  calculate_distance %>% 
+  na.omit() %>% 
+  st_drop_geometry %>% glimpse
 
 
 ```
@@ -217,10 +242,11 @@ event_plot <- pop_repeats %>%
   scale_colour_manual(values = c("black","black")) +
   labs(caption = NULL) +
   theme(plot.title = element_text(hjust = 1,size = 30,vjust = -50),
-        plot.subtitle = element_text(hjust = -0.025,vjust = -0.5),
+        plot.subtitle = element_text(hjust = -0.025,vjust = -0.5,size = rel(1.5)),
         plot.background = element_rect(fill = "transparent", colour = "transparent"),
         panel.background = element_rect(fill = "transparent"),
-        axis.text = element_text(color = "black",size = rel(0.85))) 
+        axis.text = element_text(color = "black",size = rel(1.5)),
+        axis.title.x = element_text(size = rel(1.5))) 
   
 
  ggsave(event_plot,
@@ -239,31 +265,6 @@ event_plot <- pop_repeats %>%
 
 
 ```{r animated plots}
-
-calculate_elapsed_time <- function(df){
-  df %>% 
-    mutate(date_time = parse_date_time(time,tz = "UTC",orders = "%Y-%m-%d%H:%M%S" ) %>% 
-             with_tz("Pacific/Auckland"),
-           elapsed_time = as.numeric(date_time - min(date_time,na.rm=T)),
-           hours = hour(seconds_to_period(elapsed_time)),
-           minutes = minute(seconds_to_period(elapsed_time)),
-           hours_minutes = hm(paste(hours,minutes, sep=":")),
-           month = month(date_time))
-}
-
-monthly_effort_files <- dir("data/monthly_efforts/",pattern = "gpx$",full.names = T)
-
-monthly_efforts <- map_df(monthly_effort_files,
-                        function(x) read_gpx(x) %>% 
-                          mutate(Month = factor(gsub("data/monthly_efforts/Adventure_for_Dementia_|\\.gpx","",x),
-                                 levels = month.name))) %>% 
-filter(Month %in% month.name[1:which(this_month == month.name)]) %>% 
-  group_by(Month) %>% 
-  calculate_elapsed_time() %>% 
-  calculate_distance %>% 
-  na.omit() %>% 
-  st_drop_geometry %>% glimpse
-
 
 
 animated_plot <- monthly_efforts %>% 
@@ -333,10 +334,10 @@ daylight_hours <- getSunlightTimes(x,lat = -43.5, lon = 172.6, tz = "Pacific/Auc
          sunlight = sunset - sunrise) %>% #,
          # across(c("dawn","sunrise","sunset","dusk"),~format(.,"%H%M"))) %>% glimpse
   left_join(actual_run_times) %>% 
-  mutate(expected_time_1.25 = case_when(is.na(duration) ~ 
+  mutate(mean = case_when(is.na(duration) ~ 
                                           as.duration(month * max(mean_lap_time,na.rm = T)),
                                         TRUE ~ duration),
-         expected_time_1.50 = case_when(is.na(duration) ~ as.duration(month*3600 * 1.5),
+         max = case_when(is.na(duration) ~ as.duration(month*3600 * 1.5),
                                         TRUE ~ duration),
          start_dawn = case_when(is.na(start) ~ dawn,
                            TRUE ~ start),
@@ -346,10 +347,9 @@ daylight_hours <- getSunlightTimes(x,lat = -43.5, lon = 172.6, tz = "Pacific/Auc
                           TRUE ~ TRUE)) %>% 
   pivot_longer(names_to = "lap_time",
                values_to = "expected_time",
-               cols= contains("expected_time")) %>% 
+               cols= one_of(c("mean","max"))) %>% 
   mutate(lap_time = factor(case_when(done ~ "actual",
-                                     lap_time %in% "expected_time_1.25" ~ "mean",
-                                     TRUE ~ "max"),
+                                     TRUE ~ lap_time),
                            levels = c("actual","mean","max"))) %>% 
   glimpse
 
@@ -369,9 +369,6 @@ daylight_labels <- data.frame(class = c("actual", "mean", "max"),
                                          "Max lap pace = 1.5 hours"))
 
 
-
-
-
 plot_daylight_hours <- ggplot(data = daylight_hours,
        aes(x= date)) +
    geom_point(data = data.frame(date = daylight_hours$date,time = runif(length(daylight_hours$date))*2400),
@@ -385,8 +382,8 @@ plot_daylight_hours <- ggplot(data = daylight_hours,
 
   geom_linerange(data = daylight_hours %>% 
                    filter(date %in% rundays | date %in% as.Date("2023-04-02")), 
-                 aes(ymin = convert_time(start_dawn), 
-                     ymax = convert_time(start_dawn + expected_time),
+                 aes(ymin = convert_time(start_sunrise), 
+                     ymax = convert_time(start_sunrise + expected_time),
                      colour = lap_time),
                  lwd = 4,show.legend = TRUE) +
   scale_x_date(expand=c(0,0),date_breaks = "month",date_labels = "%b") +
@@ -433,7 +430,7 @@ plot_daylength <- ggplot(data = daylight_hours,
                       values = daylight_labels$values,
                       labels = daylight_labels$labels)
 
-(plot_daylight_hours +
+combined_daylight_plot <- (plot_daylight_hours +
   theme(axis.text.x = element_blank())) / plot_daylength +
   plot_annotation(caption = "The time taken to complete each month's Adventure for Dementia plotted against the available daylight hours.\nGreen bars show estimated times based on current pacing.",
                   # subtitle = "Will I be running in the dark?",
@@ -452,11 +449,43 @@ plot_daylength <- ggplot(data = daylight_hours,
         plot.subtitle = element_text(hjust = 0,lineheight = 0.25),
         plot.margin = margin(-10,10,5,5))
 
-ggsave(filename = "outputs/running_in_the_dark.png",width = 15, height = 15,units="cm")
+ggsave(combined_daylight_plot,
+       filename = "outputs/running_in_the_dark.png",width = 15, height = 15,units="cm")
 
-daylight_hours %>% 
-  filter(date %in% as.Date("2023-07-01")) %>% 
-  mutate()
+
+ggsave(plot_daylength +
+         labs(title = "Adventure\nfor Dementia") +
+         theme(panel.background=element_rect(fill=daylight_pal[2]),
+               panel.grid=element_blank(),
+               legend.position = "bottom",
+               legend.direction = "horizontal",
+               legend.key=element_rect(fill="white"),
+               legend.spacing.x = unit(0.075, 'cm'),
+               text=element_text(family="xkcd",size = 30),
+               axis.text= element_text(color = "black"),
+               plot.caption = element_text(lineheight = 0.25),
+               plot.title = element_text(hjust = 1,size = 50,vjust = -20,lineheight = 0.25),
+               plot.subtitle = element_text(hjust = 0,lineheight = 0.25),
+               plot.margin = margin(-10,10,5,5)),
+       filename = "outputs/daylength.png",width=12, height = 12,units = "cm")
+
+ggsave(plot_daylight_hours +
+         labs(title = "Adventure\nfor Dementia") +
+         theme(panel.background=element_rect(fill=daylight_pal[2]),
+               panel.grid=element_blank(),
+               legend.position = "bottom",
+               legend.direction = "horizontal",
+               legend.key=element_rect(fill="white"),
+               legend.spacing.x = unit(0.075, 'cm'),
+               text=element_text(family="xkcd",size = 30),
+               axis.text= element_text(color = "black"),
+               plot.caption = element_text(lineheight = 0.25),
+               plot.title = element_text(hjust = 1,size = 50,vjust = -20,lineheight = 0.25),
+               plot.subtitle = element_text(hjust = 0,lineheight = 0.25),
+               plot.margin = margin(-10,10,5,5)),
+       filename = "outputs/daylight_hours.png",width=12, height = 12,units = "cm")
+
+
 ```
 
 
