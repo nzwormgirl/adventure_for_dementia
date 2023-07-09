@@ -1,0 +1,70 @@
+---
+title: "get mountain elevations"
+author: "Amy Whitehead"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Code adapted from https://www.r-bloggers.com/2021/07/politely-scraping-wikipedia-tables-2/
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# To clean data
+library(tidyverse)
+library(lubridate)
+library(janitor)
+
+# To scrape data
+library(rvest)
+library(httr)
+library(polite)
+
+```
+
+
+```{r get elevation data}
+
+url <- "https://en.wikipedia.org/wiki/List_of_mountains_by_elevation"
+
+
+url_bow <- polite::bow(url)
+url_bow
+
+ind_html <-
+  polite::scrape(url_bow) %>%  # scrape web page
+  rvest::html_nodes("table") %>% # pull out specific table
+  rvest::html_table(fill = TRUE) 
+
+mountain_elevations <- map(1:length(ind_html), function(x) ind_html[[x]] %>% mutate(across(everything(), as.character))) %>% 
+  bind_rows() %>% 
+  clean_names() %>% 
+  mutate(across(c("metres","feet"), parse_number))
+
+saveRDS(mountain_elevations, file = "data/mountain_elevations.rds")
+
+```
+
+
+```{r}
+url <- "https://www.peakbagger.com/list.aspx?lid=4824"
+
+url_bow <- polite::bow(url)
+url_bow
+
+ind_html <-
+  polite::scrape(url_bow) %>%  # scrape web page
+  rvest::html_nodes("table") %>% # pull out specific table
+  rvest::html_table(fill = TRUE)
+
+
+nz_peaks <- ind_html[[6]] %>% 
+  clean_names() %>% 
+  rename(metres = elev_m) %>% 
+  mutate(metres = parse_number(metres)) %>% glimpse
+
+```
+

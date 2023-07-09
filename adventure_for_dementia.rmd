@@ -382,8 +382,8 @@ plot_daylight_hours <- ggplot(data = daylight_hours,
 
   geom_linerange(data = daylight_hours %>% 
                    filter(date %in% rundays | date %in% as.Date("2023-04-02")), 
-                 aes(ymin = convert_time(start_sunrise), 
-                     ymax = convert_time(start_sunrise + expected_time),
+                 aes(ymin = convert_time(start_dawn), 
+                     ymax = convert_time(start_dawn + expected_time),
                      colour = lap_time),
                  lwd = 4,show.legend = TRUE) +
   scale_x_date(expand=c(0,0),date_breaks = "month",date_labels = "%b") +
@@ -488,6 +488,80 @@ ggsave(plot_daylight_hours +
 
 ```
 
+
+
+```{r mountain elevation plot}
+
+mountain_elevations <- readRDS("data/mountain_elevations.rds")
+
+monthly_efforts %>% group_by(Month) %>% 
+  summarise(vert = max(cum_uphill)) %>% 
+  group_by(Month) %>% 
+  mutate(mountain_elevations[which( mountain_elevations$metres <= vert),] %>% slice(1),
+         nz_peaks[which( nz_peaks$metres <= vert),] %>% slice(1))
+
+mountain_elevations %>% filter(str_detect(location_and_notes,"New Zealand|NZ"))
+
+afd_elevation <- data.frame(Month = factor(month.name[1:7]),
+           elevation = c(480,957,1431,1897,2394,2872,3338),
+           mountain_height = c(487,959,1429,1895,2373,2882,3309),
+           mountain = c("Mangatangi","Pirongia","Woolshed Hill","Ben Cruachan","Watch Tower","Grey Peak","Mt Vancouver"),
+           url = c("https://www.topomap.co.nz/NZTopoMap/nz7737/Mangatangi/Waikato",
+                   "https://www.topomap.co.nz/NZTopoMap/nz57002/Pirongia/Waikato",
+                   "https://www.topomap.co.nz/NZTopoMap/nz33644/Woolshed-Hill/Canterbury",
+                   "https://www.topomap.co.nz/NZTopoMap/nz17913/Ben-Cruachan/Otago",
+                   "https://www.topomap.co.nz/NZTopoMap/nz26020/Watch-Tower/Canterbury",
+                   "https://www.topomap.co.nz/NZTopoMap/nz26456/Grey-Peak/Canterbury",
+                   "https://www.topomap.co.nz/NZTopoMap/nz26266/Mount-Vancouver/Canterbury")) %>% 
+  left_join(month_labels) %>% 
+  mutate(Month = factor(Month, levels = month.name),
+         y = 1:7)
+
+
+make_mountain <- function(N,elevation,distance){
+  x <- c(sort(qnorm(runif(N/2, pnorm(-0.5), pnorm(0.5)))),sort(qnorm(runif(N/2, pnorm(-0.5), pnorm(0.5))),decreasing = T))
+  data.frame(elevation = (x-min(x))/(max(x)-min(x))*(elevation-0),
+             distance = seq(0,distance,length.out = N))
+}
+
+map_df(1:nrow(afd_elevation),function(x) make_mountain(elevation = afd_elevation$elevation[x],
+                                                       distance = afd_elevation$cum_dist[x],
+                                                       N = ceiling(afd_elevation$cum_dist[x]) * 10) %>% 
+         mutate(Month = afd_elevation$Month[x],
+                y = x)) %>% 
+  # filter(Month %in% "January") %>% 
+  ggplot(aes(x = distance,y = -y, group = Month,height = elevation,fill = elevation))+
+  geom_density_ridges_gradient( show.legend = F,stat = "identity") + #, fill = "darkgreen"
+  geom_text(data = afd_elevation, 
+            aes(y = c(-0.5:-6.5),x =cum_dist - 2, label = paste0(mountain," - ",mountain_height," m")),
+            size = 10,hjust=0,
+            family = "xkcd") +
+  scale_y_continuous(breaks = c(-1:-7),labels = afd_elevation$Month) + 
+  scale_fill_paletteer_c("ggthemes::Green",direction = -1) + #"grDevices::terrain.colors"
+  theme_minimal() +
+  coord_cartesian(clip = "off") + 
+  labs(y = NULL,
+       x = "Distance in km",
+       title = "Adventure for\nDementia") +
+  theme(plot.background=element_rect(fill="white"),
+        panel.grid=element_blank(),
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.key=element_rect(fill="white"),
+        legend.spacing.x = unit(0.075, 'cm'),
+        text=element_text(family="xkcd",size = 30),
+        axis.text= element_text(color = "black"),
+        plot.caption = element_text(lineheight = 0.25),
+        plot.title = element_text(hjust = 1.25,size = 80,vjust = -40,lineheight = 0.25),
+        plot.title.position = "plot",
+        plot.subtitle = element_text(hjust = 0,lineheight = 0.25),
+        plot.margin = margin(-30,60,5,5)) 
+  
+
+
+ggsave(filename = "outputs/mountain_elevations.png",width=12, height = 12,units = "cm")
+
+```
 
 ```{r , eval = FALSE}
 
