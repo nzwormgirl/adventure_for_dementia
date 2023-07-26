@@ -27,7 +27,7 @@ require(ggtext)
 
 animate <- gganimate::animate
 
-this_month <- "July"
+this_month <- "August"
 
 # options(gganimate.dev_args = list(fps = 10, start_pause = 5,end_pause = 5, res = 72, height = 20, units = "cm"))
 ```
@@ -162,6 +162,7 @@ filter(Month %in% month.name[1:which(this_month == month.name)]) %>%
   calculate_elapsed_time() %>% 
   calculate_distance %>% 
   na.omit() %>% 
+  bind_cols(.,st_coordinates(st_transform(.,crs = 3857))) %>% 
   st_drop_geometry %>% glimpse
 
 
@@ -632,7 +633,7 @@ ggsave(filename = "outputs/mountain_elevations.png",width=12, height = 12,units 
 
 ```
 
-```{r , eval = FALSE}
+```{r animated map, eval = FALSE}
 
 require(terra) # for raster data
 require(tidyterra) # for plotting rasters
@@ -651,26 +652,35 @@ pop_map <- pop_track %>% #read_gpx("data/monthly_efforts/Adventure_for_Dementia_
 
 ggsave(pop_map,file = "outputs/route_map.png")
   
-# january_map <- afd_january %>% 
-#   bind_cols(st_coordinates(afd_january)) %>% 
+animated_map <- monthly_efforts %>% 
+  filter(Month %in% c("January","February","March","April","May","June","July")) %>% 
 
-ggplot(aes(X,Y)) +
+ggplot(aes(X,Y,group = Month)) +
   geom_spatraster_rgb(data = tile_z11) +
-  geom_line(size = 1, colour = "black") +
+  # geom_line(linewidth = 1, colour = "lightgrey") +
+  geom_sf(data = pop_track, colour = "lightgrey",inherit.aes = FALSE,size = 2) +
+  geom_point(aes(colour = Month),size = 5,alpha = 0.5) +
   theme_void() + 
   theme(text=element_text(family="xkcd"),
-        plot.background = element_rect(fill = "white")) +
-  # transition_reveal(diff_time) +
+        plot.background = element_rect(fill = "white",colour = "white")) +
+  transition_reveal(elapsed_time) +
   labs(title = "Adventure for Dementia",
-       subtitle = 'Time since start: {round(frame_along/60,0)} minutes',
+       subtitle = 'Time: {round(frame_along/60/60,1)} hours',
        caption = NULL,
        fill = NULL,
        shape = NULL)
 
-animate_january_map <- gganimate::animate(january_map,fps = 10,start_pause = 5, end_pause = 5,
-                                          height = 20, units = "cm",res=72)
+animated_map_gif <- gganimate::animate(animated_map,fps = 5,detail = 5,start_pause = 5, end_pause = 5,
+                                          height = 15, width = 15, units = "cm",res=72)
 
-anim_save(animate_january_map,filename = "outputs/january_map_animation.gif")
+anim_save(animated_map_gif,filename = paste0("outputs/",this_month,"/animated_map.gif"))
+
+animated_map_mp4 <- gganimate::animate(animated_map,
+                                        res = 150, width = 15, height = 15, units = "cm",
+                                        fps = 7, detail = 7, start_pause = 7, end_pause = 10,
+                                        renderer = av_renderer())
+
+anim_save(animated_map_mp4,filename = paste0("outputs/",this_month,"/animated_map.mp4"))
 ```
 
 https://towardsdatascience.com/how-to-combine-animated-plots-in-r-734c6c952315
