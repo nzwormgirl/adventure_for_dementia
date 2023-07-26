@@ -162,7 +162,11 @@ filter(Month %in% month.name[1:which(this_month == month.name)]) %>%
   calculate_elapsed_time() %>% 
   calculate_distance %>% 
   na.omit() %>% 
+<<<<<<< HEAD
   bind_cols(.,st_coordinates(st_transform(.,crs = 3857))) %>% 
+=======
+  bind_cols(.,st_coordinates(.)) %>% 
+>>>>>>> d64f74a782f3bacbc16e17ae773b6297e27c287c
   st_drop_geometry %>% glimpse
 
 
